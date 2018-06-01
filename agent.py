@@ -14,7 +14,7 @@ import socket
 # declaring visible grid to agent
 view = [['' for _ in range(5)] for _ in range(5)]
 
-current_direction = 'S'
+current_direction = 'N'
 # direction instructions
 change_directions = {
     'r':{'N':'E','E':'S','S':'W','W':'N'},
@@ -24,10 +24,16 @@ change_current_point = {
     'f':{'N':[-1,0],'E':[0,1],'W':[0,-1],'S':[1,0]}
 }
 num_of_rotations = {
-    'S': 0,
+    'S': 2,
     'E': 1,
-    'N': 2,
+    'N': 0,
     'W': 3
+}
+direction_symbols ={
+    'N':'^',
+    'S':'V',
+    'E':'>',
+    'W':'<'
 }
 num_new_tiles = 0
 env_graph = {}
@@ -35,33 +41,34 @@ env_map_size = 25
 current_point = [int(env_map_size/2),int(env_map_size/2)]
 env_map = [['?' for _ in range(env_map_size)] for _ in range(env_map_size)]
 
-def rotate_clockwise_view(view, no_times):
+def rotate_clockwise_view(view, no_times, current_symbol):
     for _ in range(no_times):
         view = list(zip(*view[::-1]))
     for i in range(len(view)):
         view[i] = list (view[i])
-    if no_times==1:
-        view[2][2]=">"
-    if no_times==2:
-        view[2][2]="V"
-    if no_times==3:
-        view[2][2]="<"
+    view[2][2]=current_symbol
     return view
 
-def adjust_view(view, current_direction, num_of_rotations):
-    return rotate_clockwise_view(view, num_of_rotations[current_direction])
+def adjust_view(view, current_direction, num_of_rotations, direction_symbols):
+    return rotate_clockwise_view(view, num_of_rotations[current_direction], direction_symbols[current_direction])
 
 def record_view(adjusted_view, env_map, current_point):
     x = current_point[0]
     y = current_point[1]
     for i in range (-2,3):
         for j in range (-2,3):
-            # if env_map[x + i][j + y] == '?':
-            env_map[x + i][j + y] =  view[i+2][j+2] 
-            # if view[i+2][j+2] not in '<>^V': 
-            #     env_map[x + i][j + y] =  view[i+2][j+2] 
-            # else:
-            #     env_map[x + i][j + y] = ' '
+            if env_map[x + i][j + y] in '<>^V':
+                env_map[x + i][j + y] =  adjusted_view[i+2][j+2]
+
+            if env_map[x + i][j + y] == '?':
+                env_map[x + i][j + y] =  adjusted_view[i+2][j+2] 
+
+            if env_map[x + i][j + y] in '-o~Ta$k':
+                env_map[x + i][j + y] =  adjusted_view[i+2][j+2] 
+
+            if adjusted_view[i+2][j+2] in '<>^V':
+                env_map[x + i][j + y] =  adjusted_view[i+2][j+2]
+
     return env_map
 
 def initialize_view():
@@ -95,7 +102,8 @@ def get_action(view):
     # global walkable_graph
     global current_point 
     global env_map
-    adjusted_view = adjust_view(view, current_direction, num_of_rotations)
+    global direction_symbols
+    adjusted_view = adjust_view(view, current_direction, num_of_rotations, direction_symbols)
 
     print ("Adjusted view - Current direction " + current_direction)
     print_grid(adjusted_view)
@@ -106,7 +114,7 @@ def get_action(view):
     while 1:
         
         inp = input("Enter Action(s): ")
-        # inp = 'r'
+        #inp = 'r'
 
         inp.strip()
         final_string = ''
@@ -142,11 +150,11 @@ def print_grid(view):
 if __name__ == "__main__":
 
     # checks for correct amount of arguments 
-    if len(sys.argv) != 3:
-        print("Usage Python3 "+sys.argv[0]+" -p port \n")
-        sys.exit(1)
+    # if len(sys.argv) != 3:
+    #     print("Usage Python3 "+sys.argv[0]+" -p port \n")
+    #     sys.exit(1)
 
-    port = int(sys.argv[2])
+    # port = int(sys.argv[2])
 
     port = 12345
 
