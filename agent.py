@@ -10,6 +10,8 @@
 
 import sys
 import socket
+import pprint
+
 
 # declaring visible grid to agent
 view = [['' for _ in range(5)] for _ in range(5)]
@@ -37,9 +39,64 @@ direction_symbols ={
 }
 num_new_tiles = 0
 env_graph = {}
-env_map_size = 25
-current_point = [int(env_map_size/2),int(env_map_size/2)]
-env_map = [['?' for _ in range(env_map_size)] for _ in range(env_map_size)]
+ENV_MAP_SIZE = 6
+current_point = [int(ENV_MAP_SIZE/2),int(ENV_MAP_SIZE/2)]
+env_map = [['?' for _ in range(ENV_MAP_SIZE)] for _ in range(ENV_MAP_SIZE)]
+locations = {
+    "tree": set(),
+    "door": set(),
+    "water": set(),
+    "wall": set(),
+    "axe": set(),
+    "key": set(),
+    "stone": set(),
+    "walk": set(),
+    "river": set(),
+    "non-walk": set()
+}
+
+def dijkstra(graph,src,dest,visited=[],distances={},predecessors={}):
+    """ calculates a shortest path tree routed in src
+    """    
+    # a few sanity checks
+    if src not in graph:
+        raise TypeError('The root of the shortest path tree cannot be found')
+    if dest not in graph:
+        raise TypeError('The target of the shortest path cannot be found')    
+    # ending condition
+    if src == dest:
+        # We build the shortest path and display it
+        path=[]
+        pred=dest
+        while pred != None:
+            path.append(pred)
+            pred=predecessors.get(pred,None)
+        print('shortest path: '+str(path)+" cost="+str(distances[dest])) 
+    else :     
+        # if it is the initial  run, initializes the cost
+        if not visited: 
+            distances[src]=0
+        # visit the neighbors
+        for neighbor in graph[src] :
+            if neighbor not in visited:
+                
+                distance_neighbor = 1
+
+                new_distance = distances[src] + distance_neighbor
+                if new_distance < distances.get(neighbor,float('inf')):
+                    distances[neighbor] = new_distance
+                    predecessors[neighbor] = src
+        # mark as visited
+        visited.append(src)
+        # now that all neighbors have been visited: recurse                         
+        # select the non visited node with lowest distance 'x'
+        # run Dijskstra with src='x'
+        unvisited={}
+        for k in graph:
+            if k not in visited:
+                unvisited[k] = distances.get(k,float('inf'))        
+        x=min(unvisited, key=unvisited.get)
+        dijkstra(graph,x,dest,visited,distances,predecessors)
 
 def rotate_clockwise_view(view, no_times, current_symbol):
     for _ in range(no_times):
@@ -51,6 +108,14 @@ def rotate_clockwise_view(view, no_times, current_symbol):
 
 def adjust_view(view, current_direction, num_of_rotations, direction_symbols):
     return rotate_clockwise_view(view, num_of_rotations[current_direction], direction_symbols[current_direction])
+
+def convert_to_rowcol(tile_id):
+    return [int (tile_id/ENV_MAP_SIZE), int (tile_id % ENV_MAP_SIZE)]
+
+def convert_to_tileid(rowcol):
+    [i,j]=rowcol
+    return ENV_MAP_SIZE*i+j
+    
 
 def record_view(adjusted_view, env_map, current_point):
     x = current_point[0]
@@ -71,25 +136,44 @@ def record_view(adjusted_view, env_map, current_point):
 
     return env_map
 
-def initialize_view():
-    pass
+def analyse_view(env_map, locations):
+    for i in range(ENV_MAP_SIZE):
+        for j in range(ENV_MAP_SIZE):
+            if env_map[i][j] == 'T':
+                locations["tree"].add(convert_to_tileid([i,j]))
+            if env_map[i][j] == 'k':
+                locations["key"].add(convert_to_tileid([i,j]))
+            if env_map[i][j] == 'a':
+                locations["axe"].add(convert_to_tileid([i,j]))
+            if env_map[i][j] == '-':
+                locations["door"].add(convert_to_tileid([i,j]))
+            if env_map[i][j] == 'o':
+                locations["stone"].add(convert_to_tileid([i,j]))
+    return locations
 
-def analyse_view(view, current_direction, num_new_tiles, env_graph):
-    pass
+def generate_graph_paths(adjusted_view, current_point, env_graph):
+    x = current_point[0]
+    y = current_point[1]
+    for i in range(5):
+        for j in range(5):
+            if adjusted_view[i][j] not in '*?~-':
+                from_i = i + x - 2
+                from_j = j + y - 2
+                from_id = convert_to_tileid([from_i,from_j])
+                for l in range (i-1,i+2):
+                    for k in range(j-1,j+2):
+                        if (l >= 0) and (k >= 0) and (l<5) and (k <5) and ((l !=i) or (k != j)) and abs((l-i)+(k-j))==1:
+                            if adjusted_view[l][k] not in '*?~-':
+                                to_i = l + x - 2
+                                to_j = k + y - 2
+                                to_id = convert_to_tileid([to_i, to_j])
+                                if from_id in env_graph:
+                                    env_graph[from_id][to_id]= {"symbol": adjusted_view[l][k], "from": convert_to_rowcol(from_id), "to": convert_to_rowcol(to_id)}
+                                else:
+                                    env_graph[from_id] = {to_id: {"symbol": adjusted_view[l][k], "from": convert_to_rowcol(from_id), "to": convert_to_rowcol(to_id)}}
+    
+    return env_graph
 
-    #         [fr, to, delay, cap] = line.split()
-    #         delay = int(delay)
-    #         cap = int(cap)
-    #         if fr in graph:
-    #             env_graph[fr][to] = {'delay': delay, 'cap': cap, 'used': 0}
-    #         else:
-    #             env_graph[fr] = {to: {'delay': delay, 'cap': cap, 'used': 0}}
-
-    #         if to in graph:
-    #             env_graph[to][fr] = {'delay': delay, 'cap': cap, 'used': 0}
-    #         else:
-    #             env_graph[to] = {fr: {'delay': delay, 'cap': cap, 'used': 0}}
-    # return env_graph
 
 # function to take get action from AI or user
 def get_action(view):
@@ -99,22 +183,30 @@ def get_action(view):
     global change_directions
     global num_of_rotations
     global num_new_tiles
-    # global walkable_graph
-    global current_point 
+    global current_point
+    global env_graph
     global env_map
     global direction_symbols
+    global locations
+
     adjusted_view = adjust_view(view, current_direction, num_of_rotations, direction_symbols)
 
     print ("Adjusted view - Current direction " + current_direction)
     print_grid(adjusted_view)
     print ("Record map - current point {0}".format(current_point))
     env_map = record_view (adjusted_view, env_map, current_point)
-    print_grid(env_map) 
+    print_grid(env_map)
+    locations = analyse_view(env_map, locations)
+    env_graph = generate_graph_paths(adjusted_view, current_point, env_graph)
+    pp = pprint.PrettyPrinter(indent=4)
+    print(locations)
+    pp.pprint(env_graph)
+    # print(env_graph)
     # input loop to take input from user (only returns if this is valid)
     while 1:
         
         inp = input("Enter Action(s): ")
-        #inp = 'r'
+        #inp = 'f'
 
         inp.strip()
         final_string = ''
