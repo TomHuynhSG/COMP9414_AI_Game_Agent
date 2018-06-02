@@ -20,6 +20,7 @@ current_direction = 'N'
 # direction instructions
 change_directions = {
     'r':{'N':'E','E':'S','S':'W','W':'N'},
+    'rr':{'N':'S','E':'W','S':'N','W':'E'},
     'l':{'N':'W','E':'N','S':'E','W':'S'},
 }
 change_current_point = {
@@ -39,7 +40,7 @@ direction_symbols ={
 }
 num_new_tiles = 0
 env_graph = {}
-ENV_MAP_SIZE = 15
+ENV_MAP_SIZE = 20
 current_point = [int(ENV_MAP_SIZE/2),int(ENV_MAP_SIZE/2)]
 env_map = [['?' for _ in range(ENV_MAP_SIZE)] for _ in range(ENV_MAP_SIZE)]
 inventory = {
@@ -60,22 +61,38 @@ locations = {
     "river": set(),
     "non_walk": set()
 }
+actions_queue=""
 
-def collect_check(current_point, inventory, locations):
+def action_result(current_point, inventory, locations):
     current_tileid = convert_to_tileid(current_point)
+    
+    # collect stuffs
     if current_tileid in locations["key"]:
         inventory["key"] +=1
         locations["key"].remove(current_tileid)
+    if current_tileid in locations["stone"]:
+        inventory["stone"] +=1
+        locations["stone"].remove(current_tileid)
+    if current_tileid in locations["axe"]:
+        inventory["axe"] +=1
+        locations["axe"].remove(current_tileid)
+    
+    #remove needed explore tiles
+    if current_tileid in locations["non_walk"]:
+        locations["non_walk"].remove(current_tileid)
+
     return (inventory, locations)
+
+
 
 def dijkstra(graph,src,dest,visited=[],distances={},predecessors={}):
     """ calculates a shortest path tree routed in src
     """    
     # a few sanity checks
     if src not in graph:
-        raise TypeError('The destination cannot be found')
+        raise TypeError('The destination cannot be found'+str(src))
     if dest not in graph:
-        raise TypeError('The target cannot be found')    
+        raise TypeError('The target cannot be found '+str(dest))    
     # ending condition
     if src == dest:
         # We build the shortest path and display it
@@ -129,7 +146,28 @@ def convert_to_rowcol(tile_id):
 def convert_to_tileid(rowcol):
     [i,j]=rowcol
     return ENV_MAP_SIZE*i+j
-    
+
+def which_direction(from_location_id,to_location_id):  
+    [from_x, from_y] = convert_to_rowcol(from_location_id)
+    [to_x, to_y] = convert_to_rowcol(to_location_id)
+    if to_y < from_y:
+        return 'W'
+    if to_y > from_y:
+        return 'E'
+    if to_x < from_x:
+        return 'N'
+    if to_x > from_x:
+        return 'S'
+
+def action_from_direction(next_direction, cur_direction, change_directions):
+    if (next_direction == cur_direction):
+        return 'f'
+    if (change_directions['r'][cur_direction] == next_direction):
+        return 'rf'
+    if (change_directions['l'][cur_direction] == next_direction):
+        return 'lf'
+    if (change_directions['rr'][cur_direction] == next_direction):
+        return 'rrf'
 
 def record_view(adjusted_view, env_map, current_point):
     x = current_point[0]
@@ -174,7 +212,7 @@ def generate_graph_paths(adjusted_view, current_point, env_graph):
     y = current_point[1]
     for i in range(5):
         for j in range(5):
-            if adjusted_view[i][j] not in '*?~-':
+            if adjusted_view[i][j] not in '*?~':
                 from_i = i + x - 2
                 from_j = j + y - 2
                 from_id = convert_to_tileid([from_i,from_j])
@@ -196,21 +234,45 @@ def generate_graph_paths(adjusted_view, current_point, env_graph):
     
     return env_graph
 
-def strategy(env_graph, current_point, locations):
+def convert_path_to_actions(path, current_direction, change_directions):
+    previous_direction = current_direction
+    path = path[::-1]
+    actions = []
+    for i in range (len(path)-1):
+        next_direction = which_direction(path[i],path[i+1])
+        next_action = action_from_direction(next_direction, previous_direction, change_directions)
+        actions.append(next_action)
+        previous_direction = next_direction
+    actions = ''.join(actions)
+    return (actions,path)
+
+def strategy(env_graph, current_point, locations, change_directions):
     from_id = convert_to_tileid(current_point)
-    if len(locations["key"])!=0:
-        to_key_id = next(iter(locations["key"]))
-        (path, distance) = dijkstra(env_graph, from_id, to_key_id,[],{},{})
-        print('shortest path to nearest key: '+str(path)+" cost="+str(distance)) 
-    if len(locations["axe"])!=0:
-        to_key_id = next(iter(locations["axe"]))
-        (path, distance) = dijkstra(env_graph, from_id, to_key_id,[],{},{})
-        print('shortest path to nearest axe: '+str(path)+" cost="+str(distance))
-    if len(locations["door"])!=0:
-        to_key_id = next(iter(locations["door"]))
-        (path, distance) = dijkstra(env_graph, from_id, to_key_id,[],{},{})
-        print('shortest path to nearest door: '+str(path)+" cost="+str(distance)) 
-    pass
+    next_action = "WTF"
+    if len(locations["non_walk"])!=0:
+        to_id = next(iter(locations["non_walk"]))
+        (path, distance) = dijkstra(env_graph, from_id, to_id,[],{},{})
+        print('path to random walk from'+ str(from_id) +' to ' + str(to_id) + ': '+str(path)+" cost="+str(distance))
+        (actions, path) = convert_path_to_actions(path, current_direction, change_directions)
+        return (actions, path)
+        
+        
+    #explore first
+
+
+    # if len(locations["key"])!=0:
+    #     to_key_id = next(iter(locations["key"]))
+    #     (path, distance) = dijkstra(env_graph, from_id, to_key_id,[],{},{})
+    #     print('shortest path to nearest key: '+str(path)+" cost="+str(distance)) 
+    # if len(locations["axe"])!=0:
+    #     to_key_id = next(iter(locations["axe"]))
+    #     (path, distance) = dijkstra(env_graph, from_id, to_key_id,[],{},{})
+    #     print('shortest path to nearest axe: '+str(path)+" cost="+str(distance))
+    # if len(locations["door"])!=0:
+    #     to_key_id = next(iter(locations["door"]))
+    #     (path, distance) = dijkstra(env_graph, from_id, to_key_id,[],{},{})
+    #     print('shortest path to nearest door: '+str(path)+" cost="+str(distance)) 
+    return next_action
 
 # function to take get action from AI or user
 def get_action(view):
@@ -226,7 +288,7 @@ def get_action(view):
     global direction_symbols
     global locations
     global inventory
-
+    global actions_queue
     adjusted_view = adjust_view(view, current_direction, num_of_rotations, direction_symbols)
 
     print ("Adjusted view - Current direction " + current_direction)
@@ -236,20 +298,29 @@ def get_action(view):
     print_grid(env_map)
     locations = analyse_view(env_map, locations)
     env_graph = generate_graph_paths(adjusted_view, current_point, env_graph)
-    collect_check(current_point, inventory, locations)
-    strategy(env_graph, current_point, locations)
+    action_result(current_point, inventory, locations)
     print (inventory)
-    
     #pp = pprint.PrettyPrinter(indent=4)
     print(locations)
+
+    if len(actions_queue)==0:
+        (actions, path) = strategy(env_graph, current_point, locations, change_directions)
+        actions_queue+=actions
+        print ("The action queue is")
+        print(actions_queue)
+        print(path)
+    inp = actions_queue[0]
+    actions_queue = actions_queue[1:]
     #pp.pprint(env_graph)
     # print(env_graph)
     # input loop to take input from user (only returns if this is valid)
     while 1:
         
-        inp = input("Enter Action(s): ")
+        delay = input("Press Enter")
+        #inp = input("Enter Action(s): ")
         #inp = 'f'
 
+        print ("NEXT INPUT IS " +str(inp))
         inp.strip()
         final_string = ''
         for char in inp:
