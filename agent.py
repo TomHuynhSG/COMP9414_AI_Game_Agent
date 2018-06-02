@@ -39,9 +39,15 @@ direction_symbols ={
 }
 num_new_tiles = 0
 env_graph = {}
-ENV_MAP_SIZE = 6
+ENV_MAP_SIZE = 15
 current_point = [int(ENV_MAP_SIZE/2),int(ENV_MAP_SIZE/2)]
 env_map = [['?' for _ in range(ENV_MAP_SIZE)] for _ in range(ENV_MAP_SIZE)]
+inventory = {
+    "stone": 0,
+    "axe": 0,
+    "key": 0,
+    "raft": 0 
+}
 locations = {
     "tree": set(),
     "door": set(),
@@ -52,17 +58,24 @@ locations = {
     "stone": set(),
     "walk": set(),
     "river": set(),
-    "non-walk": set()
+    "non_walk": set()
 }
+
+def collect_check(current_point, inventory, locations):
+    current_tileid = convert_to_tileid(current_point)
+    if current_tileid in locations["key"]:
+        inventory["key"] +=1
+        locations["key"].remove(current_tileid)
+    return (inventory, locations)
 
 def dijkstra(graph,src,dest,visited=[],distances={},predecessors={}):
     """ calculates a shortest path tree routed in src
     """    
     # a few sanity checks
     if src not in graph:
-        raise TypeError('The root of the shortest path tree cannot be found')
+        raise TypeError('The destination cannot be found')
     if dest not in graph:
-        raise TypeError('The target of the shortest path cannot be found')    
+        raise TypeError('The target cannot be found')    
     # ending condition
     if src == dest:
         # We build the shortest path and display it
@@ -71,7 +84,9 @@ def dijkstra(graph,src,dest,visited=[],distances={},predecessors={}):
         while pred != None:
             path.append(pred)
             pred=predecessors.get(pred,None)
-        print('shortest path: '+str(path)+" cost="+str(distances[dest])) 
+        
+        return (path, distances[dest])
+        
     else :     
         # if it is the initial  run, initializes the cost
         if not visited: 
@@ -79,9 +94,7 @@ def dijkstra(graph,src,dest,visited=[],distances={},predecessors={}):
         # visit the neighbors
         for neighbor in graph[src] :
             if neighbor not in visited:
-                
                 distance_neighbor = 1
-
                 new_distance = distances[src] + distance_neighbor
                 if new_distance < distances.get(neighbor,float('inf')):
                     distances[neighbor] = new_distance
@@ -96,7 +109,8 @@ def dijkstra(graph,src,dest,visited=[],distances={},predecessors={}):
             if k not in visited:
                 unvisited[k] = distances.get(k,float('inf'))        
         x=min(unvisited, key=unvisited.get)
-        dijkstra(graph,x,dest,visited,distances,predecessors)
+        final_path, final_distances = dijkstra(graph,x,dest,visited,distances,predecessors)
+    return (final_path,final_distances)
 
 def rotate_clockwise_view(view, no_times, current_symbol):
     for _ in range(no_times):
@@ -149,6 +163,10 @@ def analyse_view(env_map, locations):
                 locations["door"].add(convert_to_tileid([i,j]))
             if env_map[i][j] == 'o':
                 locations["stone"].add(convert_to_tileid([i,j]))
+            if env_map[i][j] == ' ':
+                if convert_to_tileid([i,j]) not in locations["walk"]:
+                    locations["non_walk"].add(convert_to_tileid([i,j]))
+                locations["walk"].add(convert_to_tileid([i,j]))
     return locations
 
 def generate_graph_paths(adjusted_view, current_point, env_graph):
@@ -163,17 +181,36 @@ def generate_graph_paths(adjusted_view, current_point, env_graph):
                 for l in range (i-1,i+2):
                     for k in range(j-1,j+2):
                         if (l >= 0) and (k >= 0) and (l<5) and (k <5) and ((l !=i) or (k != j)) and abs((l-i)+(k-j))==1:
-                            if adjusted_view[l][k] not in '*?~-':
+                            if (adjusted_view[l][k] not in "^><V-"):
+                                to_symbol = adjusted_view[l][k]
+                            else:
+                                to_symbol = " "
+                            if to_symbol not in '*?~':
                                 to_i = l + x - 2
                                 to_j = k + y - 2
                                 to_id = convert_to_tileid([to_i, to_j])
                                 if from_id in env_graph:
-                                    env_graph[from_id][to_id]= {"symbol": adjusted_view[l][k], "from": convert_to_rowcol(from_id), "to": convert_to_rowcol(to_id)}
+                                    env_graph[from_id][to_id]= {"symbol": to_symbol, "from": convert_to_rowcol(from_id), "to": convert_to_rowcol(to_id)}
                                 else:
-                                    env_graph[from_id] = {to_id: {"symbol": adjusted_view[l][k], "from": convert_to_rowcol(from_id), "to": convert_to_rowcol(to_id)}}
+                                    env_graph[from_id] = {to_id: {"symbol": to_symbol, "from": convert_to_rowcol(from_id), "to": convert_to_rowcol(to_id)}}
     
     return env_graph
 
+def strategy(env_graph, current_point, locations):
+    from_id = convert_to_tileid(current_point)
+    if len(locations["key"])!=0:
+        to_key_id = next(iter(locations["key"]))
+        (path, distance) = dijkstra(env_graph, from_id, to_key_id,[],{},{})
+        print('shortest path to nearest key: '+str(path)+" cost="+str(distance)) 
+    if len(locations["axe"])!=0:
+        to_key_id = next(iter(locations["axe"]))
+        (path, distance) = dijkstra(env_graph, from_id, to_key_id,[],{},{})
+        print('shortest path to nearest axe: '+str(path)+" cost="+str(distance))
+    if len(locations["door"])!=0:
+        to_key_id = next(iter(locations["door"]))
+        (path, distance) = dijkstra(env_graph, from_id, to_key_id,[],{},{})
+        print('shortest path to nearest door: '+str(path)+" cost="+str(distance)) 
+    pass
 
 # function to take get action from AI or user
 def get_action(view):
@@ -188,6 +225,7 @@ def get_action(view):
     global env_map
     global direction_symbols
     global locations
+    global inventory
 
     adjusted_view = adjust_view(view, current_direction, num_of_rotations, direction_symbols)
 
@@ -198,9 +236,13 @@ def get_action(view):
     print_grid(env_map)
     locations = analyse_view(env_map, locations)
     env_graph = generate_graph_paths(adjusted_view, current_point, env_graph)
-    pp = pprint.PrettyPrinter(indent=4)
+    collect_check(current_point, inventory, locations)
+    strategy(env_graph, current_point, locations)
+    print (inventory)
+    
+    #pp = pprint.PrettyPrinter(indent=4)
     print(locations)
-    pp.pprint(env_graph)
+    #pp.pprint(env_graph)
     # print(env_graph)
     # input loop to take input from user (only returns if this is valid)
     while 1:
