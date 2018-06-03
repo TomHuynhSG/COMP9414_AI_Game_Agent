@@ -1,17 +1,11 @@
-
-# ^^ note the python directive on the first line
-# COMP 9414 agent initiation file 
-# requires the host is running before the agent
-# designed for python 3.6
-# typical initiation would be (file in working directory, port = 31415)
-#        python3 agent.py -p 31415
-# created by Leo Hoare
-# with slight modifications by Alan Blair
+#!/usr/bin/python3
+# Name: Nguyen Minh Thong Huynh
+# ID: 5170141
 
 import sys
 import socket
 import pprint
-
+import copy
 
 # declaring visible grid to agent
 view = [['' for _ in range(5)] for _ in range(5)]
@@ -39,95 +33,141 @@ direction_symbols ={
     'W':'<'
 }
 num_new_tiles = 0
+exploration_quota = 4
 env_graph = {}
-ENV_MAP_SIZE = 20
+ENV_MAP_SIZE = 90
 current_point = [int(ENV_MAP_SIZE/2),int(ENV_MAP_SIZE/2)]
 env_map = [['?' for _ in range(ENV_MAP_SIZE)] for _ in range(ENV_MAP_SIZE)]
 inventory = {
+    "treasure": 0,
     "stone": 0,
     "axe": 0,
     "key": 0,
     "raft": 0 
 }
 locations = {
-    "tree": set(),
-    "door": set(),
-    "water": set(),
-    "wall": set(),
-    "axe": set(),
-    "key": set(),
-    "stone": set(),
-    "walk": set(),
-    "river": set(),
-    "non_walk": set()
+    "tree": [],
+    "door": [],
+    "water": [],
+    "wall": [],
+    "treasure": [],
+    "axe": [],
+    "key": [],
+    "stone": [],
+    "water": [],
+    "yet_water": [],
+    "walk": [],
+    "yet_walk": [],
+    "unreachable": []
 }
+in_the_water = False
+water_explore_phrase = False
 actions_queue=""
-
-def action_result(current_point, inventory, locations):
-    current_tileid = convert_to_tileid(current_point)
-    
-    # collect stuffs
-    if current_tileid in locations["key"]:
-        inventory["key"] +=1
-        locations["key"].remove(current_tileid)
-    if current_tileid in locations["stone"]:
-        inventory["stone"] +=1
-        locations["stone"].remove(current_tileid)
-    if current_tileid in locations["axe"]:
-        inventory["axe"] +=1
-        locations["axe"].remove(current_tileid)
-    
-    #remove needed explore tiles
-    if current_tileid in locations["non_walk"]:
-        locations["non_walk"].remove(current_tileid)
-
-    return (inventory, locations)
+path_queue=[]
 
 
+def dijkstra_path_search(graph, source, destination, water_explore_phrase, env_map, visited=[], distances={}, predecessors={}):
 
-def dijkstra(graph,src,dest,visited=[],distances={},predecessors={}):
-    """ calculates a shortest path tree routed in src
-    """    
-    # a few sanity checks
-    if src not in graph:
-        raise TypeError('The destination cannot be found'+str(src))
-    if dest not in graph:
-        raise TypeError('The target cannot be found '+str(dest))    
-    # ending condition
-    if src == dest:
-        # We build the shortest path and display it
+    if source not in graph:
+        return ([],None)
+
+    if destination not in graph:
+        return ([],None)
+   
+    if source == destination: 
+
         path=[]
-        pred=dest
+        pred=destination
         while pred != None:
             path.append(pred)
             pred=predecessors.get(pred,None)
         
-        return (path, distances[dest])
+        return (path, distances[destination])
         
     else :     
-        # if it is the initial  run, initializes the cost
+
         if not visited: 
-            distances[src]=0
-        # visit the neighbors
-        for neighbor in graph[src] :
+            distances[source]=0
+
+        for neighbor in graph[source] :
             if neighbor not in visited:
-                distance_neighbor = 1
-                new_distance = distances[src] + distance_neighbor
-                if new_distance < distances.get(neighbor,float('inf')):
+                [x, y] = convert_to_rowcol(neighbor)
+                tile_type = env_map[x][y]
+                if (water_explore_phrase==False):
+                    if (tile_type =='~'):
+                        distance_neighbor = 50
+                    else:
+                        distance_neighbor = 1
+                else:
+                    if (tile_type =='~'):
+                        distance_neighbor = 1
+                    else:
+                        distance_neighbor = 50
+                new_distance = distances[source] + distance_neighbor
+                if new_distance < distances.get(neighbor, float('inf')):
                     distances[neighbor] = new_distance
-                    predecessors[neighbor] = src
-        # mark as visited
-        visited.append(src)
-        # now that all neighbors have been visited: recurse                         
-        # select the non visited node with lowest distance 'x'
-        # run Dijskstra with src='x'
+                    predecessors[neighbor] = source
+
+        visited.append(source)
+
         unvisited={}
         for k in graph:
             if k not in visited:
-                unvisited[k] = distances.get(k,float('inf'))        
-        x=min(unvisited, key=unvisited.get)
-        final_path, final_distances = dijkstra(graph,x,dest,visited,distances,predecessors)
-    return (final_path,final_distances)
+                unvisited[k] = distances.get(k, float('inf'))
+        if all(dist==float('inf') for dist in unvisited.values()):
+            return ([], None)
+        new_source = min(unvisited, key=unvisited.get)
+        (final_path, final_distances) = dijkstra_path_search(graph, new_source, destination, water_explore_phrase, env_map, visited, distances, predecessors)
+    return (final_path, final_distances)
+
+
+def step_on_result(current_point, inventory, locations, in_the_water):
+    current_tileid = convert_to_tileid(current_point)
+    
+    # collect stuffs
+    if current_tileid in locations["water"]:
+        in_the_water=True
+    else:
+        in_the_water=False
+
+    if current_tileid in locations["key"]:
+        inventory["key"] +=1
+        locations["key"].remove(current_tileid)
+        print ("Picked up key at "+str(current_tileid))
+    if current_tileid in locations["stone"]:
+        inventory["stone"] +=1
+        locations["stone"].remove(current_tileid)
+        print ("Picked up stone at "+str(current_tileid))
+    if current_tileid in locations["axe"]:
+        inventory["axe"] +=1
+        locations["axe"].remove(current_tileid)
+        print ("Picked up axe at "+str(current_tileid))
+    if current_tileid in locations["treasure"]:
+        inventory["treasure"] +=1
+        locations["treasure"].remove(current_tileid)
+        print ("Picked up treasure at "+str(current_tileid))
+    #remove needed explore tiles
+    if current_tileid in locations["yet_walk"]:
+        locations["yet_walk"].remove(current_tileid)
+        print ("Explored at "+str(current_tileid))
+    if current_tileid in locations["yet_water"]:
+        locations["yet_water"].remove(current_tileid)
+        print ("Explored at "+str(current_tileid))
+
+    return (inventory, locations,in_the_water)
+
+def action_result(action, current_point, current_direction, change_current_point, inventory, locations):
+    facing_point_distance = change_current_point['f'][current_direction]
+    facing_tileid = convert_to_tileid([current_point[0] + facing_point_distance[0], current_point[1] + facing_point_distance[1]])
+    
+    if (action=='c'):
+        inventory["raft"] = 1
+        locations["tree"].remove(facing_tileid)
+    
+    if (action=='u'):
+        locations["door"].remove(facing_tileid)
+
+    return (inventory, locations)
 
 def rotate_clockwise_view(view, no_times, current_symbol):
     for _ in range(no_times):
@@ -174,37 +214,56 @@ def record_view(adjusted_view, env_map, current_point):
     y = current_point[1]
     for i in range (-2,3):
         for j in range (-2,3):
-            if env_map[x + i][j + y] in '<>^V':
+            if env_map[x + i][j + y] in '<>^V?-o~Ta$k':
                 env_map[x + i][j + y] =  adjusted_view[i+2][j+2]
-
-            if env_map[x + i][j + y] == '?':
-                env_map[x + i][j + y] =  adjusted_view[i+2][j+2] 
-
-            if env_map[x + i][j + y] in '-o~Ta$k':
-                env_map[x + i][j + y] =  adjusted_view[i+2][j+2] 
 
             if adjusted_view[i+2][j+2] in '<>^V':
                 env_map[x + i][j + y] =  adjusted_view[i+2][j+2]
 
     return env_map
 
+def check_valid_path(path, inventory, env_map):
+    num_raft = inventory["raft"]
+    num_stone = inventory["stone"]
+    for tile_id in path:
+        [tile_row, tile_col]= convert_to_rowcol(tile_id)
+        if env_map[tile_row][tile_col] in "-T":
+            return False
+        if env_map[tile_row][tile_col] in "~":
+            if (num_stone>0) or (num_raft>0):
+                if (num_stone)>0:
+                    num_stone -=1
+                else:
+                    num_stone = 0
+            else:
+                return False
+    return True
+
 def analyse_view(env_map, locations):
     for i in range(ENV_MAP_SIZE):
         for j in range(ENV_MAP_SIZE):
-            if env_map[i][j] == 'T':
-                locations["tree"].add(convert_to_tileid([i,j]))
-            if env_map[i][j] == 'k':
-                locations["key"].add(convert_to_tileid([i,j]))
-            if env_map[i][j] == 'a':
-                locations["axe"].add(convert_to_tileid([i,j]))
-            if env_map[i][j] == '-':
-                locations["door"].add(convert_to_tileid([i,j]))
-            if env_map[i][j] == 'o':
-                locations["stone"].add(convert_to_tileid([i,j]))
-            if env_map[i][j] == ' ':
-                if convert_to_tileid([i,j]) not in locations["walk"]:
-                    locations["non_walk"].add(convert_to_tileid([i,j]))
-                locations["walk"].add(convert_to_tileid([i,j]))
+            tile_id = convert_to_tileid([i,j])
+            tile_type = env_map[i][j]         
+            if (tile_type == 'T') and (tile_id not in locations["tree"]):
+                locations["tree"].append(tile_id)
+            if (tile_type == 'k') and (tile_id not in locations["key"]):
+                locations["key"].append(tile_id)
+            if (tile_type == 'a') and (tile_id not in locations["axe"]):
+                locations["axe"].append(tile_id)
+            if (tile_type == '-') and (tile_id not in locations["door"]):
+                locations["door"].append(tile_id)
+            if (tile_type == 'o') and (tile_id not in locations["stone"]):
+                locations["stone"].append(tile_id)
+            if (tile_type == '$') and (tile_id not in locations["treasure"]):
+                locations["treasure"].append(tile_id)
+            if tile_type == '~':
+                if tile_id not in locations["water"]:
+                    locations["yet_water"].append(tile_id)
+                    locations["water"].append(tile_id)
+            if tile_type == ' ':
+                if tile_id not in locations["walk"]:
+                    locations["yet_walk"].append(tile_id)
+                    locations["walk"].append(tile_id)
     return locations
 
 def generate_graph_paths(adjusted_view, current_point, env_graph):
@@ -212,25 +271,25 @@ def generate_graph_paths(adjusted_view, current_point, env_graph):
     y = current_point[1]
     for i in range(5):
         for j in range(5):
-            if adjusted_view[i][j] not in '*?~':
+            if adjusted_view[i][j] not in '*?.':
                 from_i = i + x - 2
                 from_j = j + y - 2
                 from_id = convert_to_tileid([from_i,from_j])
                 for l in range (i-1,i+2):
                     for k in range(j-1,j+2):
                         if (l >= 0) and (k >= 0) and (l<5) and (k <5) and ((l !=i) or (k != j)) and abs((l-i)+(k-j))==1:
-                            if (adjusted_view[l][k] not in "^><V-"):
-                                to_symbol = adjusted_view[l][k]
-                            else:
-                                to_symbol = " "
-                            if to_symbol not in '*?~':
+                            # if (adjusted_view[l][k] not in "^><V-"):
+                            tile_type = adjusted_view[l][k]
+                            # else:
+                            #     to_symbol = " "
+                            if tile_type not in '*?.':
                                 to_i = l + x - 2
                                 to_j = k + y - 2
                                 to_id = convert_to_tileid([to_i, to_j])
                                 if from_id in env_graph:
-                                    env_graph[from_id][to_id]= {"symbol": to_symbol, "from": convert_to_rowcol(from_id), "to": convert_to_rowcol(to_id)}
+                                    env_graph[from_id][to_id]= {"from": convert_to_rowcol(from_id), "to": convert_to_rowcol(to_id)}
                                 else:
-                                    env_graph[from_id] = {to_id: {"symbol": to_symbol, "from": convert_to_rowcol(from_id), "to": convert_to_rowcol(to_id)}}
+                                    env_graph[from_id] = {to_id: {"from": convert_to_rowcol(from_id), "to": convert_to_rowcol(to_id)}}
     
     return env_graph
 
@@ -246,33 +305,156 @@ def convert_path_to_actions(path, current_direction, change_directions):
     actions = ''.join(actions)
     return (actions,path)
 
-def strategy(env_graph, current_point, locations, change_directions):
+
+def find_path(from_id, to_id, locations, inventory, env_map, env_graph,water_explore_phrase, stop_before=""):
+    (path, distance) = dijkstra_path_search(env_graph, from_id, to_id,water_explore_phrase, env_map,[],{},{})
+    if (stop_before!=""):
+        temp_path = copy.deepcopy(path)
+        path = path[1:]
+    if (check_valid_path(path, inventory, env_map) == False):
+        path=[]
+        distance=None
+    if (path==[]) and (distance==None):
+        if to_id not in locations["unreachable"]:
+            locations['unreachable'].append(to_id)
+        return ("", path, distance, locations)
+        # else:
+        #     raise TypeError('ERROR: explore unreachable tiles again')
+    else:
+        if (stop_before==""):            
+            (actions, path) = convert_path_to_actions(path, current_direction, change_directions)
+        else:
+            (actions, path) = convert_path_to_actions(temp_path, current_direction, change_directions)
+            actions = actions[:-1]
+            if (stop_before=='Tree'):
+                actions +='c'
+            if (stop_before=='Door'):
+                actions +='u'
+        return (actions, path, distance, locations)
+
+def strategy(env_graph, env_map, current_point, locations, inventory, change_directions, exploration_quota, water_explore_phrase):
     from_id = convert_to_tileid(current_point)
-    next_action = "WTF"
-    if len(locations["non_walk"])!=0:
-        to_id = next(iter(locations["non_walk"]))
-        (path, distance) = dijkstra(env_graph, from_id, to_id,[],{},{})
-        print('path to random walk from'+ str(from_id) +' to ' + str(to_id) + ': '+str(path)+" cost="+str(distance))
-        (actions, path) = convert_path_to_actions(path, current_direction, change_directions)
-        return (actions, path)
-        
-        
-    #explore first
 
 
-    # if len(locations["key"])!=0:
-    #     to_key_id = next(iter(locations["key"]))
-    #     (path, distance) = dijkstra(env_graph, from_id, to_key_id,[],{},{})
-    #     print('shortest path to nearest key: '+str(path)+" cost="+str(distance)) 
-    # if len(locations["axe"])!=0:
-    #     to_key_id = next(iter(locations["axe"]))
-    #     (path, distance) = dijkstra(env_graph, from_id, to_key_id,[],{},{})
-    #     print('shortest path to nearest axe: '+str(path)+" cost="+str(distance))
-    # if len(locations["door"])!=0:
-    #     to_key_id = next(iter(locations["door"]))
-    #     (path, distance) = dijkstra(env_graph, from_id, to_key_id,[],{},{})
-    #     print('shortest path to nearest door: '+str(path)+" cost="+str(distance)) 
-    return next_action
+    if (inventory["treasure"]>0):
+        home_loc = [int(ENV_MAP_SIZE/2),int(ENV_MAP_SIZE/2)]
+        to_id = convert_to_tileid(home_loc)
+        print ('trying find home with treasure dijkstra from'+ str(from_id) +' to ' + str(to_id))
+        (actions, path, distance, locations)= find_path(from_id, to_id, locations, inventory, env_map, env_graph, water_explore_phrase)
+        print('path from'+ str(from_id) +' to ' + str(to_id) + ': '+str(path)+" cost="+str(distance))
+        if (actions != ""):
+            return (actions, path)
+
+    #time to get the treasure
+    if len(locations["treasure"])!=0:
+        treasure_location = locations["treasure"][0]
+        to_id = treasure_location
+        print ('trying find treasure dijkstra from'+ str(from_id) +' to ' + str(to_id))
+        (actions, path, distance, locations)= find_path(from_id, to_id, locations, inventory, env_map, env_graph, water_explore_phrase)
+        print('path from'+ str(from_id) +' to ' + str(to_id) + ': '+str(path)+" cost="+str(distance))
+        if (actions != ""):
+            return (actions, path)
+
+    #time to get the axe
+    if (len(locations["axe"])!=0) and (inventory["axe"]==0):
+        axe_location = locations["axe"][0]
+        to_id = axe_location
+        print ('trying find axe dijkstra from'+ str(from_id) +' to ' + str(to_id))
+        (actions, path, distance, locations)= find_path(from_id, to_id, locations, inventory, env_map, env_graph, water_explore_phrase)
+        print('path from'+ str(from_id) +' to ' + str(to_id) + ': '+str(path)+" cost="+str(distance))
+        if (actions != ""):
+            return (actions, path)
+
+    #time to cut the tree with axe
+    if (len(locations["tree"])!=0) and (inventory["axe"]>0):
+        for to_id in locations["tree"]:
+            print ('trying find tree to cut dijkstra from'+ str(from_id) +' to ' + str(to_id))
+            (actions, path, distance, locations)= find_path(from_id, to_id, locations, inventory, env_map, env_graph, water_explore_phrase, "Tree")
+            print('path from'+ str(from_id) +' to ' + str(to_id) + ': '+str(path)+" cost="+str(distance))
+            if (actions == ""):
+                continue
+            else:
+                return (actions, path)
+
+    #time to collect stones
+    # if (len(locations["stone"])!=0):
+    #     for to_id in locations["stone"]:
+    #         print ('trying find stone dijkstra from'+ str(from_id) +' to ' + str(to_id))
+    #         (actions, path, distance, locations)= find_path(from_id, to_id, locations, inventory, env_map, env_graph, water_explore_phrase, "Tree")
+    #         print('path from'+ str(from_id) +' to ' + str(to_id) + ': '+str(path)+" cost="+str(distance))
+    #         if (actions == ""):
+    #             continue
+    #         else:
+    #             return (actions, path)
+
+    #time to get the key
+    if (len(locations["key"])!=0) and (inventory["key"]==0):
+        axe_location = locations["key"][0]
+        to_id = axe_location
+        print ('trying find key dijkstra from'+ str(from_id) +' to ' + str(to_id))
+        (actions, path, distance, locations)= find_path(from_id, to_id, locations, inventory, env_map, env_graph, water_explore_phrase)
+        print('path from'+ str(from_id) +' to ' + str(to_id) + ': '+str(path)+" cost="+str(distance))
+        if (actions != ""):
+            return (actions, path)
+
+    #time to unlock the door with key
+    if (len(locations["door"])!=0) and (inventory["key"]>0):
+        for to_id in locations["door"]:
+            print ('trying find unlock door with key dijkstra from'+ str(from_id) +' to ' + str(to_id))
+            (actions, path, distance, locations)= find_path(from_id, to_id, locations, inventory, env_map, env_graph, water_explore_phrase, "Door")
+            print('path from'+ str(from_id) +' to ' + str(to_id) + ': '+str(path)+" cost="+str(distance))
+            if (actions == ""):
+                continue
+            else:
+                return (actions, path)
+
+
+    if (water_explore_phrase == False):
+        explore_land_tiles = []
+        for tile_id in locations["yet_walk"]:
+            if tile_id not in locations["unreachable"]:
+                explore_land_tiles.append(tile_id)
+        if len(explore_land_tiles)!=0:
+            for to_id in explore_land_tiles:
+                print ('trying find explore land dijkstra from'+ str(from_id) +' to ' + str(to_id))
+                (actions, path, distance, locations)= find_path(from_id, to_id, locations, inventory, env_map, env_graph, water_explore_phrase)
+                print('path from'+ str(from_id) +' to ' + str(to_id) + ': '+str(path)+" cost="+str(distance))
+                if (actions == ""):
+                    continue
+                else:
+                    return (actions, path)
+
+
+    #Time to explore water
+     
+    explore_water_tiles = []
+    for tile_id in locations["yet_water"]:
+        if tile_id not in locations["unreachable"]:
+            explore_water_tiles.append(tile_id)
+    if (inventory["raft"]>0) or (inventory["stone"]>0):
+        water_explore_phrase = True
+        for to_id in explore_water_tiles:
+            print ("Water Phrase: "+str(water_explore_phrase))
+            print ('trying find explore water dijkstra from'+ str(from_id) +' to ' + str(to_id))
+            (actions, path, distance, locations)= find_path(from_id, to_id, locations, inventory, env_map, env_graph, water_explore_phrase)
+            print('path from'+ str(from_id) +' to ' + str(to_id) + ': '+str(path)+" cost="+str(distance))
+            if (actions == ""):
+                continue
+            else:
+                return (actions, path)
+
+    if (exploration_quota>0):
+        exploration_quota -=1
+        locations["unreachable"]=[]
+        water_explore_phrase = False 
+    else:
+        raise TypeError('No more free tiles to explore')
+    #no more exploration can be done!!!
+    
+
+
+    raise TypeError('Need more strategies - no more actions')     
+
 
 # function to take get action from AI or user
 def get_action(view):
@@ -289,6 +471,10 @@ def get_action(view):
     global locations
     global inventory
     global actions_queue
+    global path_queue
+    global exploration_quota
+    global in_the_water
+    global water_explore_phrase
     adjusted_view = adjust_view(view, current_direction, num_of_rotations, direction_symbols)
 
     print ("Adjusted view - Current direction " + current_direction)
@@ -298,27 +484,34 @@ def get_action(view):
     print_grid(env_map)
     locations = analyse_view(env_map, locations)
     env_graph = generate_graph_paths(adjusted_view, current_point, env_graph)
-    action_result(current_point, inventory, locations)
+    (inventory, locations,in_the_water) = step_on_result(current_point, inventory, locations,in_the_water)
     print (inventory)
-    #pp = pprint.PrettyPrinter(indent=4)
+    # pp = pprint.PrettyPrinter(indent=4)
+    # pp.pprint(env_graph)
     print(locations)
+    
 
     if len(actions_queue)==0:
-        (actions, path) = strategy(env_graph, current_point, locations, change_directions)
+        (actions, path) = strategy(env_graph, env_map, current_point, locations, inventory, change_directions, exploration_quota, water_explore_phrase)
         actions_queue+=actions
-        print ("The action queue is")
-        print(actions_queue)
-        print(path)
+        path_queue = path
+    print ("The action queue is")
+    print(actions_queue)
+    print ("The path queue is")
+    print(path_queue)
+    a = []
+    for tile_id in path_queue:
+        a.append(convert_to_rowcol(tile_id))
+    print (a)
     inp = actions_queue[0]
     actions_queue = actions_queue[1:]
-    #pp.pprint(env_graph)
+    
     # print(env_graph)
     # input loop to take input from user (only returns if this is valid)
     while 1:
         
-        delay = input("Press Enter")
+        #delay = input("Press Enter")
         #inp = input("Enter Action(s): ")
-        #inp = 'f'
 
         print ("NEXT INPUT IS " +str(inp))
         inp.strip()
@@ -332,7 +525,10 @@ def get_action(view):
                     if final_string[0] in change_current_point:
                         new_point = change_current_point[final_string[0]][current_direction]
                         current_point[0] += new_point[0]
-                        current_point[1] += new_point[1]                 
+                        current_point[1] += new_point[1]
+
+                    (inventory, locations) = action_result(final_string[0], current_point, current_direction, change_current_point, inventory, locations)
+
                     return final_string[0]
 
 # helper function to print the grid
@@ -355,13 +551,13 @@ def print_grid(view):
 if __name__ == "__main__":
 
     # checks for correct amount of arguments 
-    # if len(sys.argv) != 3:
-    #     print("Usage Python3 "+sys.argv[0]+" -p port \n")
-    #     sys.exit(1)
+    if len(sys.argv) != 3:
+        print("Usage Python3 "+sys.argv[0]+" -p port \n")
+        sys.exit(1)
 
-    # port = int(sys.argv[2])
+    port = int(sys.argv[2])
 
-    port = 12345
+    #port = 12345
 
     # checking for valid port number
     if not 1025 <= port <= 65535:
